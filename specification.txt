@@ -1,0 +1,18 @@
+Colors consist of two bytes red, two bytes green, two bytes blue and two bytes opacity. Colors are assigned to cells in a four dimensional raster, from left to right for width cells, from top to bottom for height cells, from front to back for depth cells and from kata to ana for trength cells.
+
+header byte layout
+0 width in cells
+4 height in cells
+8 depth in cells
+12 trength in cells
+16 chunk list
+
+For every cell in the four dimensional raster, chunks define the difference in red, green, blue and opacity to their preceding chunk. The first chunk refers to zero red, zero green, zero blue and zero opacity instead. Differences are signed numbers that may wrap the red, green, blue or opacity. For example, a red of 78 and a difference of -100, result in a red of 65514. Additionally, chunks count consecutive occurrences, to encode up to fifteen cells in one. An occurrence count of zero indicates that the following chunk encodes more significant bits of the same cell. For example, a blue difference of 300 requires nine bits, therefore, the least significant seven bits are stored in the first chunk with an occurrence count of zero and the most significant two bits are stored in the second chunk with an occurrence count of one up to fifteen.
+
+chunk bit layout
+0 occurrence count
+4 red difference
+11 green difference
+18 blue difference
+25 opacity difference
+32
