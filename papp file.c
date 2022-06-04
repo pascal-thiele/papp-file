@@ -56,15 +56,28 @@ unsigned long papp_file_encode_size(unsigned char* source_address, unsigned int 
 
     // Counts the smallest amount of chunks to encode the difference.
     red_difference |= green_difference | blue_difference | opacity_difference;
-    if (red_difference >> 13 != 0)
-    { file_size += 12; }
-    else if (red_difference >> 6 != 0)
-    { file_size += 8; }
-    else if (red_difference != 0)
+    red_difference &= 65535;
+    if ((red_difference >> 6) == 0)
     { file_size += 4; }
+    else if ((red_difference >> 13) == 0)
+    { file_size += 8; }
+    else
+    { file_size += 12; }
 
+    // Skip up to fourteen additional occurrences.
+    unsigned long occurrence_count = 1;
     source_address += 8;
     source_size -= 8;
+    while ((occurrence_count != 15) && (source_size >= 8)
+      && (red == *(unsigned short*)source_address)
+      && (green == *(unsigned short*)(source_address + 2))
+      && (blue == *(unsigned short*)(source_address + 4))
+      && (opacity == *(unsigned short*)(source_address + 6)))
+    {
+      occurrence_count += 1;
+      source_address += 8;
+      source_size -= 8;
+    }
   }
   return file_size;
 }
@@ -115,7 +128,7 @@ void papp_file_encode(unsigned char* source_address, unsigned long source_size, 
     unsigned long occurrence_count = 1;
     source_address += 8;
     source_size -= 8;
-    while ((occurrence_count < 15) && (source_size >= 8)
+    while ((occurrence_count != 15) && (source_size >= 8)
       && (red == *(unsigned short*)source_address)
       && (green == *(unsigned short*)(source_address + 2))
       && (blue == *(unsigned short*)(source_address + 4))
@@ -131,6 +144,7 @@ void papp_file_encode(unsigned char* source_address, unsigned long source_size, 
     mask |= green_difference ^ (green_difference >> 14);
     mask |= blue_difference ^ (blue_difference >> 14);
     mask |= opacity_difference ^ (opacity_difference >> 14);
+    mask &= 65535;
 
     // Writes the smallest amount of chunks to encode the difference.
     if ((mask >> 6) == 0)
