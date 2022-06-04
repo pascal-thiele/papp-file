@@ -7,7 +7,10 @@ header byte layout
 12 trength in cells
 16 chunk list
 
-For every cell in the four dimensional raster, chunks define the difference in red, green, blue and opacity to their preceding chunk. The first chunk refers to zero red, zero green, zero blue and zero opacity instead. Differences are signed numbers that may wrap the red, green, blue or opacity. For example, a red of 78 and a difference of -100, result in a red of 65514. Additionally, chunks count consecutive occurrences, to encode up to fifteen cells in one. An occurrence count of zero indicates that the following chunk encodes more significant bits of the same cell. For example, a blue difference of 300 requires nine bits, therefore, the least significant seven bits are stored in the first chunk with an occurrence count of zero and the most significant two bits are stored in the second chunk with an occurrence count of one up to fifteen.
+For every cell in the four dimensional raster, chunks define the difference in red, green, blue and opacity to their preceding chunk. The first chunk refers to zero red, zero green, zero blue and zero opacity instead. Differences are signed numbers, using the two's complement, in which a value is negated by flipping all bits and adding one. To keep differences as small as possible, red, green, blue or opacity may be wrapped. For example, a red of 78 and a difference of -100, result in a red of 65514.
+
+Chunks count consecutive occurrences, to encode up to fifteen cells in one. An occurrence count of zero indicates that differences continue in the following chunk. For each red, green, blue and opacity, one cell encodes a difference of -64 to 63, two cells encode a difference of -8192 to 8191, three cells encode a difference of -32768 to 32767. Even if a difference is stored across multiple chunks, all chunks contain the sign in the most significant bit of the difference, so that
+first_chunk_difference + second_chunk_difference * 128 + third_chunk_difference * 32768 = difference.
 
 chunk bit layout
 0 occurrence count
