@@ -225,7 +225,7 @@ unsigned long long papp_file_decode_size(unsigned char* address)
   unsigned long long depth = *(unsigned int*)(address + 8);
   unsigned long long trength = *(unsigned int*)(address + 12);
   unsigned long long decode_size = width * height * depth * trength * 8;
-  if ((decode_size != 0) && (width < 18446744073709551615 / height / depth / trength / 8))
+  if ((decode_size != 0) && ((18446744073709551615 / width / height / depth / trength / 8) != 0))
   { return decode_size; }
   return 0;
 }
@@ -239,7 +239,7 @@ void papp_file_decode(unsigned char* source_address, unsigned char* destination_
   unsigned long long depth = *(unsigned int*)(source_address + 8);
   unsigned long long trength = *(unsigned int*)(source_address + 12);
   unsigned long long cell_count = width * height * depth * trength;
-  if ((cell_count != 0) && (width < 18446744073709551615 / height / depth / trength))
+  if ((cell_count != 0) && ((18446744073709551615 / width / height / depth / trength) != 0))
   {
     unsigned long long red = 0;
     unsigned long long green = 0;
