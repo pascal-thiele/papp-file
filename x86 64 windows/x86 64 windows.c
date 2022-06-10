@@ -1,7 +1,7 @@
 #include "Windows.h"
-#include "papp file.h"
-#include "portable network graphics.h"
-#include "console.h"
+#include "papp file.c"
+#include "portable network graphics.c"
+#include "console.c"
 
 
 unsigned char compare_type_RGBA64(unsigned char* address, unsigned long size)
@@ -116,8 +116,13 @@ int main()
       }
       else if (compare_type_PNG(file_type_address, file_type_size) == 0)
       {
+        console_append_unsigned_integer(source_file_size);
+        console_append_character(10); console_append_character(13); console_write();
         destination_file_size = portable_network_graphics_decode_size(source_file_address);
         console_append_unsigned_integer(destination_file_size);
+        console_append_character(10); console_append_character(13); console_write();
+        unsigned char status = portable_network_graphics_decode(source_file_address, destination_file_address);
+        console_append_unsigned_integer(status);
         console_append_character(10); console_append_character(13); console_write();
         destination_file_size = 0;
         // to do

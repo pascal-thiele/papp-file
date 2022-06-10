@@ -1,12 +1,3 @@
-struct papp_file_header
-{
-  unsigned int width;
-  unsigned int height;
-  unsigned int depth;
-  unsigned int trength;
-};
-
-
 // Returns the amount of bytes needed to encode source_size bytes from source_address to a papp file. Source lists two bytes red, two bytes green, two bytes blue and two bytes opacity.
 unsigned long long papp_file_encode_size(unsigned char* source_address, unsigned long long source_size)
 {
