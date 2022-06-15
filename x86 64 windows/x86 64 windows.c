@@ -1,10 +1,11 @@
 #include "Windows.h"
+#include "memory.c"
 #include "papp file.c"
 #include "portable network graphics.c"
 #include "console.c"
 
 
-unsigned char compare_type_RGBA64(unsigned char* address, unsigned long size)
+unsigned long long compare_type_RGBA64(unsigned char* address, unsigned long long size)
 {
   if ((size == 7)
     && ((address[1] == 82) || (address[1] == 114))
@@ -18,7 +19,7 @@ unsigned char compare_type_RGBA64(unsigned char* address, unsigned long size)
 }
 
 
-unsigned char compare_type_PNG(unsigned char* address, unsigned long size)
+unsigned long long compare_type_PNG(unsigned char* address, unsigned long long size)
 {
   if ((size == 4)
     && ((address[1] == 80) || (address[1] == 112))
@@ -30,14 +31,17 @@ unsigned char compare_type_PNG(unsigned char* address, unsigned long size)
 
 
 unsigned char file_name[256];
-unsigned char heap[16777216];
 
 int main()
 {
-  unsigned char* command = GetCommandLineA();
-  unsigned char terminator = 32;
-
+  // Initialize memory.
+  memory = VirtualAlloc(0, memory_capacity, 12288, 4);
+  if (memory == 0)
+  { return 0; }
+  
   // Seek the program name.
+  unsigned char* command = GetCommandLineA();
+  unsigned long long terminator = 32;
   while (*command == 32)
   { command += 1; }
 
@@ -81,21 +85,31 @@ int main()
     if (*command == 34)
     { command += 1; }
     
-    // Read the file to heap.
-    unsigned char* source_file_address = heap;
+    // Read the file.
+    unsigned char* source_file_address = 0;
     unsigned long long source_file_size = 0;
     void* file_handle = CreateFileA(file_name_address, GENERIC_READ, 0, 0, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if (file_handle != -1)
     {
       if (GetFileSizeEx(file_handle, &source_file_size) != 0)
       {
-        unsigned long long read_file_size = 0;
-        ReadFile(file_handle, source_file_address, source_file_size, &read_file_size, 0);
+        source_file_address = memory_allocate(source_file_size);
+        if (source_file_address != 0)
+        {
+          unsigned long read_file_size = 0;
+          ReadFile(file_handle, source_file_address, source_file_size, &read_file_size, 0);
+        }
       }
       CloseHandle(file_handle);
     }
 
-    if (source_file_size != 0)
+console_append_unsigned_integer((unsigned long long)source_file_address);
+console_append_character(10); console_append_character(13);
+console_append_unsigned_integer(source_file_size);
+console_append_character(10); console_append_character(13);
+console_write();
+
+    if ((source_file_address != 0) && (source_file_size != 0))
     {
       // Seek the file type.
       unsigned char* file_type_address = file_name_address;
@@ -107,29 +121,37 @@ int main()
       }
 
       // Translate the source file to the destination file.
-      unsigned char* destination_file_address = ((unsigned long long)source_file_address + source_file_size + 7) & ~7;
+      unsigned char* destination_file_address = 0;
       unsigned long long destination_file_size = 0;
       if (compare_type_RGBA64(file_type_address, file_type_size) == 0)
       {
         destination_file_size = papp_file_encode_size(source_file_address, source_file_size);
-        papp_file_encode(source_file_address, source_file_size, destination_file_address);
+        destination_file_address = memory_allocate(destination_file_size);
+        if (destination_file_address != 0)
+        { papp_file_encode(source_file_address, source_file_size, destination_file_address); }
       }
       else if (compare_type_PNG(file_type_address, file_type_size) == 0)
       {
-        console_append_unsigned_integer(source_file_size);
-        console_append_character(10); console_append_character(13); console_write();
-        destination_file_size = portable_network_graphics_decode_size(source_file_address);
-        console_append_unsigned_integer(destination_file_size);
-        console_append_character(10); console_append_character(13); console_write();
-        unsigned char status = portable_network_graphics_decode(source_file_address, destination_file_address);
-        console_append_unsigned_integer(status);
-        console_append_character(10); console_append_character(13); console_write();
-        destination_file_size = 0;
-        // to do
+        unsigned long long decode_size = portable_network_graphics_decode_size(source_file_address);
+        if (decode_size != 0)
+        {
+          unsigned char* decode_address = memory_allocate(decode_size);
+          if (decode_address != 0)
+          {
+            if (portable_network_graphics_decode(source_file_address, decode_address) == 0)
+            {
+              destination_file_size = papp_file_encode_size(decode_address, decode_size);
+              destination_file_address = memory_allocate(destination_file_size);
+              if (destination_file_address != 0)
+              { papp_file_encode(decode_address, decode_size, destination_file_address); }
+            }
+            memory_free(decode_size);
+          }
+        }
       }
 
       // Write the papp file.
-      if (destination_file_size != 0)
+      if ((destination_file_address != 0) && (destination_file_size != 0))
       {
         file_type_address[1] = 112;
         file_type_address[2] = 97;
@@ -139,11 +161,13 @@ int main()
         file_handle = CreateFileA(file_name_address, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
         if (file_handle != -1)
         {
-          unsigned long long written_file_size = 0;
+          unsigned long written_file_size = 0;
           WriteFile(file_handle, destination_file_address, destination_file_size, &written_file_size, 0);
           CloseHandle(file_handle);
         }
+        memory_free(destination_file_size);
       }
+      memory_free(source_file_size);
     }
   }
   return 0;
