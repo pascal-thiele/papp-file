@@ -209,6 +209,9 @@ struct portable_network_graphics_inflate_result portable_network_graphics_inflat
 End of previous inflation attempt. */
 
 
+// Pascal Thiele: I do not care about encoding portable network graphics for now!
+
+
 unsigned long long portable_network_graphics_inflate(unsigned char* source_address, unsigned char* destination_address)
 {
   // to do
