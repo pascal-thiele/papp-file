@@ -103,12 +103,6 @@ int main()
       CloseHandle(file_handle);
     }
 
-console_append_unsigned_integer((unsigned long long)source_file_address);
-console_append_character(10); console_append_character(13);
-console_append_unsigned_integer(source_file_size);
-console_append_character(10); console_append_character(13);
-console_write();
-
     if ((source_file_address != 0) && (source_file_size != 0))
     {
       // Seek the file type.
@@ -140,10 +134,13 @@ console_write();
           {
             if (portable_network_graphics_decode(source_file_address, decode_address) == 0)
             {
+              destination_file_address = decode_address; destination_file_size = decode_size;
+              /*
               destination_file_size = papp_file_encode_size(decode_address, decode_size);
               destination_file_address = memory_allocate(destination_file_size);
               if (destination_file_address != 0)
               { papp_file_encode(decode_address, decode_size, destination_file_address); }
+              */
             }
             memory_free(decode_size);
           }

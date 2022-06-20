@@ -1,4 +1,5 @@
-#pragma once
+#ifndef CONSOLE
+#define CONSOLE
 unsigned char console[1024];
 unsigned long long console_size = 0;
 
@@ -52,3 +53,4 @@ void console_append_unsigned_integer(unsigned long long value)
     }
   }
 }
+#endif

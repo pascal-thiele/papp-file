@@ -22,7 +22,11 @@ unsigned char* memory_allocate(unsigned long long size)
 void memory_free(unsigned long long size)
 {
   if (memory_size >= size)
-  { memory_size -= size; }
+  {
+    size += 7;
+    size ^= size & 7;
+    memory_size -= size;
+  }
   else
   { memory_size = 0; }
 }
