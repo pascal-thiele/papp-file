@@ -126,23 +126,20 @@ int main()
       }
       else if (compare_type_PNG(file_type_address, file_type_size) == 0)
       {
-        unsigned long long decode_size = portable_network_graphics_decode_size(source_file_address);
-        if (decode_size != 0)
+        unsigned long long decoded_file_size = portable_network_graphics_decode_size(source_file_address);
+        if (decoded_file_size != 0)
         {
-          unsigned char* decode_address = memory_allocate(decode_size);
-          if (decode_address != 0)
+          unsigned char* decoded_file_address = memory_allocate(decoded_file_size);
+          if (decoded_file_address != 0)
           {
-            if (portable_network_graphics_decode(source_file_address, decode_address) == 0)
+            if (portable_network_graphics_decode(source_file_address, decoded_file_address) == 0)
             {
-              destination_file_address = decode_address; destination_file_size = decode_size;
-              /*
-              destination_file_size = papp_file_encode_size(decode_address, decode_size);
+              destination_file_size = papp_file_encode_size(decoded_file_address, decoded_file_size);
               destination_file_address = memory_allocate(destination_file_size);
               if (destination_file_address != 0)
-              { papp_file_encode(decode_address, decode_size, destination_file_address); }
-              */
+              { papp_file_encode(decoded_file_address, decoded_file_size, destination_file_address); }
             }
-            memory_free(decode_size);
+            memory_free(decoded_file_size);
           }
         }
       }
