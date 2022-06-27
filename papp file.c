@@ -1,3 +1,7 @@
+#ifndef PAPP_FILE
+#define PAPP_FILE
+
+
 // Returns the amount of bytes needed to encode source_size bytes from source_address to a papp file. Source lists two bytes red, two bytes green, two bytes blue and two bytes opacity.
 unsigned long long papp_file_encode_size(unsigned char* source_address, unsigned long long source_size)
 {
@@ -11,27 +15,23 @@ unsigned long long papp_file_encode_size(unsigned char* source_address, unsigned
     // Calculate the smallest difference from the previous cell, where 0 - 1 = 65535.
     unsigned long long red_target = *(unsigned short*)source_address;
     signed long long red_difference = 65535 & (65536 + (red_target - red));
-    signed long long inverse = 65535 & (65536 - (red_target - red));
-    if (red_difference >= inverse)
-    { red_difference = -inverse; }
+    if (red_difference >= 32768)
+    { red_difference -= 65536; }
 
     unsigned long long green_target = *(unsigned short*)(source_address + 2);
     signed long long green_difference = 65535 & (65536 + (green_target - green));
-    inverse = 65535 & (65536 - (green_target - green));
-    if (green_difference >= inverse)
-    { green_difference = -inverse; }
+    if (green_difference >= 32768)
+    { green_difference -= 65536; }
 
     unsigned long long blue_target = *(unsigned short*)(source_address + 4);
     signed long long blue_difference = 65535 & (65536 + (blue_target - blue));
-    inverse = 65535 & (65536 - (blue_target - blue));
-    if (blue_difference >= inverse)
-    { blue_difference = -inverse; }
+    if (blue_difference >= 32768)
+    { blue_difference -= 65536; }
 
     unsigned long long opacity_target = *(unsigned short*)(source_address + 6);
     signed long long opacity_difference = 65535 & (65536 + (opacity_target - opacity));
-    inverse = 65535 & (65536 - (opacity_target - opacity));
-    if (opacity_difference >= inverse)
-    { opacity_difference = -inverse; }
+    if (opacity_difference >= 32768)
+    { opacity_difference -= 65536; }
 
     // Keep the color for following cells.
     red = red_target;
@@ -39,18 +39,16 @@ unsigned long long papp_file_encode_size(unsigned char* source_address, unsigned
     blue = blue_target;
     opacity = opacity_target;
 
-    // Toggles the bits of negative values and prevents negative values to become zero.
-    red_difference ^= red_difference >> 14;
-    green_difference ^= green_difference >> 14;
-    blue_difference ^= blue_difference >> 14;
-    opacity_difference ^= opacity_difference >> 14;
-
-    // Counts the smallest amount of chunks to encode the difference.
+    // Count the smallest amount of chunks to encode the difference.
+    red_difference ^= red_difference >> 15;
+    green_difference ^= green_difference >> 15;
+    blue_difference ^= blue_difference >> 15;
+    opacity_difference ^= opacity_difference >> 15;
     red_difference |= green_difference | blue_difference | opacity_difference;
     red_difference &= 65535;
-    if ((red_difference >> 6) == 0)
+    if (red_difference < 64)
     { file_size += 4; }
-    else if ((red_difference >> 13) == 0)
+    else if (red_difference < 8192)
     { file_size += 8; }
     else
     { file_size += 12; }
@@ -59,7 +57,7 @@ unsigned long long papp_file_encode_size(unsigned char* source_address, unsigned
     unsigned long long occurrence_count = 1;
     source_address += 8;
     source_size -= 8;
-    while ((occurrence_count != 15) && (source_size >= 8)
+    while ((occurrence_count < 15) && (source_size >= 8)
       && (red == *(unsigned short*)source_address)
       && (green == *(unsigned short*)(source_address + 2))
       && (blue == *(unsigned short*)(source_address + 4))
@@ -74,6 +72,7 @@ unsigned long long papp_file_encode_size(unsigned char* source_address, unsigned
 }
 
 
+// TO DO Consider writing width, height, depth and trength in this functions also.
 // Encodes source_size bytes from source_address to a papp file at destination_address. Source list two bytes red, two bytes green, two bytes blue and two bytes opacity.
 void papp_file_encode(unsigned char* source_address, unsigned long long source_size, unsigned char* destination_address)
 {
@@ -87,27 +86,23 @@ void papp_file_encode(unsigned char* source_address, unsigned long long source_s
     // Calculate the smallest difference from the previous cell, where 0 - 1 = 65535.
     unsigned long long red_target = *(unsigned short*)source_address;
     signed long long red_difference = 65535 & (65536 + (red_target - red));
-    signed long inverse = 65535 & (65536 - (red_target - red));
-    if (red_difference >= inverse)
-    { red_difference = -inverse; }
+    if (red_difference >= 32768)
+    { red_difference -= 65536; }
 
     unsigned long long green_target = *(unsigned short*)(source_address + 2);
     signed long long green_difference = 65535 & (65536 + (green_target - green));
-    inverse = 65535 & (65536 - (green_target - green));
-    if (green_difference >= inverse)
-    { green_difference = -inverse; }
+    if (green_difference >= 32768)
+    { green_difference -= 65536; }
 
     unsigned long long blue_target = *(unsigned short*)(source_address + 4);
     signed long long blue_difference = 65535 & (65536 + (blue_target - blue));
-    inverse = 65535 & (65536 - (blue_target - blue));
-    if (blue_difference >= inverse)
-    { blue_difference = -inverse; }
+    if (blue_difference >= 32768)
+    { blue_difference -= 65536; }
 
     unsigned long long opacity_target = *(unsigned short*)(source_address + 6);
     signed long long opacity_difference = 65535 & (65536 + (opacity_target - opacity));
-    inverse = 65535 & (65536 - (opacity_target - opacity));
-    if (opacity_difference >= inverse)
-    { opacity_difference = -inverse;}
+    if (opacity_difference >= 32768)
+    { opacity_difference -= 65536; }
 
     // Keep the color for following cells.
     red = red_target;
@@ -115,11 +110,11 @@ void papp_file_encode(unsigned char* source_address, unsigned long long source_s
     blue = blue_target;
     opacity = opacity_target;
 
-    // Count color occurrences in following cells.
+    // Count the occurrences in following cells.
     unsigned long long occurrence_count = 1;
     source_address += 8;
     source_size -= 8;
-    while ((occurrence_count != 15) && (source_size >= 8)
+    while ((occurrence_count < 15) && (source_size >= 8)
       && (red == *(unsigned short*)source_address)
       && (green == *(unsigned short*)(source_address + 2))
       && (blue == *(unsigned short*)(source_address + 4))
@@ -130,30 +125,28 @@ void papp_file_encode(unsigned char* source_address, unsigned long long source_s
       source_size -= 8;
     }
 
-    // Toggles the bits of negative values and prevents negative values to become zero.
-    signed long long mask = red_difference ^ (red_difference >> 14);
-    mask |= green_difference ^ (green_difference >> 14);
-    mask |= blue_difference ^ (blue_difference >> 14);
-    mask |= opacity_difference ^ (opacity_difference >> 14);
+    // Write the smallest amount of chunks to encode the difference.
+    unsigned long long mask = red_difference ^ (red_difference >> 15);
+    mask |= green_difference ^ (green_difference >> 15);
+    mask |= blue_difference ^ (blue_difference >> 15);
+    mask |= opacity_difference ^ (opacity_difference >> 15);
     mask &= 65535;
-
-    // Writes the smallest amount of chunks to encode the difference.
-    if ((mask >> 6) == 0)
+    if (mask < 64)
     {
-      unsigned int chunk = occurrence_count;
-      chunk += (red_difference & 127) << 4;
-      chunk += (green_difference & 127) << 11;
-      chunk += (blue_difference & 127) << 18;
-      chunk += (opacity_difference) << 25;
+      unsigned long long chunk = occurrence_count;
+      chunk |= (red_difference & 127) << 4;
+      chunk |= (green_difference & 127) << 11;
+      chunk |= (blue_difference & 127) << 18;
+      chunk |= (opacity_difference) << 25;
       *(unsigned int*)destination_address = chunk;
       destination_address += 4;
     }
-    else if ((mask >> 13) == 0)
+    else if (mask < 8192)
     {
-      unsigned int chunk = (red_difference & 127) << 4;
-      chunk += (green_difference & 127) << 11;
-      chunk += (blue_difference & 127) << 18;
-      chunk += (opacity_difference & 127) << 25;
+      unsigned long long chunk = (red_difference & 127) << 4;
+      chunk |= (green_difference & 127) << 11;
+      chunk |= (blue_difference & 127) << 18;
+      chunk |= (opacity_difference & 127) << 25;
       *(unsigned int*)destination_address = chunk;
 
       // Increment the second chunk by one if the first chunk is negative.
@@ -163,19 +156,19 @@ void papp_file_encode(unsigned char* source_address, unsigned long long source_s
       opacity_difference = (opacity_difference + 64) >> 7;
 
       chunk = occurrence_count;
-      chunk += (red_difference & 127) << 4;
-      chunk += (green_difference & 127) << 11;
-      chunk += (blue_difference & 127) << 18;
-      chunk += (opacity_difference & 127) << 25;
+      chunk |= (red_difference & 127) << 4;
+      chunk |= (green_difference & 127) << 11;
+      chunk |= (blue_difference & 127) << 18;
+      chunk |= (opacity_difference & 127) << 25;
       *(unsigned int*)(destination_address + 4) = chunk;
       destination_address += 8;
     }
     else
     {
-      unsigned int chunk = (red_difference & 127) << 4;
-      chunk += (green_difference & 127) << 11;
-      chunk += (blue_difference & 127) << 18;
-      chunk += (opacity_difference & 127) << 25;
+      unsigned long long chunk = (red_difference & 127) << 4;
+      chunk |= (green_difference & 127) << 11;
+      chunk |= (blue_difference & 127) << 18;
+      chunk |= (opacity_difference & 127) << 25;
       *(unsigned int*)destination_address = chunk;
 
       // Increment the second chunk by one if the first chunk is negative.
@@ -185,9 +178,9 @@ void papp_file_encode(unsigned char* source_address, unsigned long long source_s
       opacity_difference = (opacity_difference + 64) >> 7;
 
       chunk = (red_difference & 127) << 4;
-      chunk += (green_difference & 127) << 11;
-      chunk += (blue_difference & 127) << 18;
-      chunk += (opacity_difference & 127) << 25;
+      chunk |= (green_difference & 127) << 11;
+      chunk |= (blue_difference & 127) << 18;
+      chunk |= (opacity_difference & 127) << 25;
       *(unsigned int*)(destination_address + 4) = chunk;
 
       // Increment the third chunk by one if the second chunk is negative.
@@ -197,10 +190,10 @@ void papp_file_encode(unsigned char* source_address, unsigned long long source_s
       opacity_difference = (opacity_difference + 64) >> 7;
 
       chunk = occurrence_count;
-      chunk += (red_difference & 127) << 4;
-      chunk += (green_difference & 127) << 11;
-      chunk += (blue_difference & 127) << 18;
-      chunk += (opacity_difference & 127) << 25;
+      chunk |= (red_difference & 127) << 4;
+      chunk |= (green_difference & 127) << 11;
+      chunk |= (blue_difference & 127) << 18;
+      chunk |= (opacity_difference & 127) << 25;
       *(unsigned int*)(destination_address + 8) = chunk;
       destination_address += 12;
     }
@@ -317,3 +310,4 @@ void papp_file_decode(unsigned char* source_address, unsigned char* destination_
     }
   }
 }
+#endif

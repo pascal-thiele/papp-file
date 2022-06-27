@@ -1,12 +1,13 @@
 #ifndef CONSOLE
 #define CONSOLE
+
 unsigned char console[1024];
 unsigned long long console_size = 0;
 
 
 void console_write()
 {
-  void* console_handle = GetStdHandle(STD_OUTPUT_HANDLE);
+  void* console_handle = GetStdHandle(-11);
   unsigned long byte_count = 0;
   WriteFile(console_handle, console, console_size, &byte_count, 0);
   console_size = 0;

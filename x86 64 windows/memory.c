@@ -1,4 +1,5 @@
-#pragma once
+#ifndef MEMORY
+#define MEMORY
 #define memory_capacity 134217728
 
 unsigned char* memory;
@@ -30,3 +31,4 @@ void memory_free(unsigned long long size)
   else
   { memory_size = 0; }
 }
+#endif
