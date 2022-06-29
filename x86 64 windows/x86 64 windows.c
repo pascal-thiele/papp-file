@@ -35,8 +35,8 @@ unsigned char file_name[256];
 int main()
 {
   // Initialize memory.
-  memory = VirtualAlloc(0, memory_capacity, 12288, 4);
-  if (memory == 0)
+  memory_address = VirtualAlloc(0, memory_capacity, 12288, 4);
+  if (memory_address == 0)
   { return 0; }
   
   // Seek the program name.

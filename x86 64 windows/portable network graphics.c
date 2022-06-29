@@ -1,3 +1,5 @@
+#ifndef portable_network_graphics
+#define portable_network_graphics
 #include "memory.c"
 #include "console.c"
 
@@ -74,10 +76,10 @@ unsigned long long portable_network_graphics_compare_tRNS(unsigned char* address
 
 unsigned long long portable_network_graphics_read_int(unsigned char* address)
 {
-  unsigned long long value = address[0];
-  value = (value << 8) | address[1];
-  value = (value << 8) | address[2];
-  value = (value << 8) | address[3];
+  unsigned long long value = *address;
+  value = (value << 8) | *(address + 1);
+  value = (value << 8) | *(address + 2);
+  value = (value << 8) | *(address + 3);
   return value;
 }
 
@@ -85,7 +87,6 @@ unsigned long long portable_network_graphics_read_int(unsigned char* address)
 // Orders sixteen bits, the less significant a bit is, the more significant a bit will be.
 unsigned long long portable_network_graphics_reverse_bit_order(unsigned long long value)
 {
-  value &= 65535;
   value = ((value & 65280) >> 8) | ((value & 255) << 8);
   value = ((value & 61680) >> 4) | ((value & 3855) << 4);
   value = ((value & 52428) >> 2) | ((value & 13107) << 2);
@@ -193,27 +194,35 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
 
       if (block_type == 0)
       {
-        // Read uncompressed bytes.
+        // Drop the remainder.
+        source_address -= remainder_size >> 3;
+        remainder = 0;
+        remainder_size = 0;
+
+        // Validate block length.
         unsigned long long block_length = *source_address | (*(source_address + 1) << 8);
         unsigned long long block_length_complement = *(source_address + 2) | (*(source_address + 3) << 8);
-        block_length_complement ^= block_length;
-        if (block_length_complement != 0)
+        if (block_length != ~block_length_complement)
         { break; }
+
+        // Copy bytes.
         source_address += 4;
+        destination_size += block_length;
         while (block_length != 0)
         {
           *destination_address = *source_address;
           destination_address += 1;
-          destination_size += 1;
           source_address += 1;
           block_length -= 1;
         }
       }
       else if (block_type == 1)
       {
+        // TO DO Still has a few missinterpretations, leading into wrong translation.
         // Read fixed huffman codes.
         while (1)
         {
+          // Lengths are up to eight bits long, with up to five extra bits. Literals are nine bits long at most.
           if (remainder_size < 13)
           {
             remainder |= *source_address << remainder_size;
@@ -227,7 +236,7 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
             }
           }
 
-          // Translate literals or lengths with nine bit codes.
+          // Translate literals with nine bit codes.
           unsigned long long symbol_code = portable_network_graphics_reverse_bit_order(remainder << 7);
           if (symbol_code >= 400)
           {
@@ -239,19 +248,21 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
             continue;
           }
 
-          // Translate literals or lengths with eight bit codes.
+          // Translate literals with eight bit codes.
           symbol_code >>= 1;
-          unsigned long long symbol_length;
           if ((symbol_code >= 48) && (symbol_code < 192))
           {
-            *destination_address = (symbol_code >> 1) - 48;
+            *destination_address = symbol_code - 48;
             destination_address += 1;
             destination_size += 1;
             remainder >>= 8;
             remainder_size -= 8;
             continue;
           }
-          else if (symbol_code == 192)
+
+          // Translate lengths with eight bit codes.
+          unsigned long long symbol_length;
+          if (symbol_code == 192)
           {
             remainder >>= 8;
             symbol_length = 115 + portable_network_graphics_reverse_bit_order(remainder << 12);
@@ -294,7 +305,7 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
           }
           else
           {
-            // Translate literals or lengths with seven bit codes.
+            // Translate lengths with seven bit codes.
             symbol_code >>= 1;
             if (symbol_code == 0)
             { break; }
@@ -413,6 +424,7 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
             { return !0; }
           }
 
+          // Distance codes are five bits long, with up to thirteen extra bits.
           if (remainder_size < 18)
           {
             remainder |= *source_address << remainder_size;
@@ -472,7 +484,7 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
           else if (symbol_code == 8)
           {
             remainder >>= 5;
-            symbol_distance = 13 + portable_network_graphics_reverse_bit_order(remainder << 13);
+            symbol_distance = 17 + portable_network_graphics_reverse_bit_order(remainder << 13);
             remainder >>= 3;
             remainder_size -= 8;
           }
@@ -481,7 +493,7 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
             remainder >>= 5;
             symbol_distance = 25 + portable_network_graphics_reverse_bit_order(remainder << 13);
             remainder >>= 3;
-            remainder_size -= 9;
+            remainder_size -= 8;
           }
           else if (symbol_code == 10)
           {
@@ -653,6 +665,7 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
             source_address += 1;
           }
         }
+
         unsigned long long literal_code_count = (remainder & 31) + 257;
         remainder >>= 5;
         unsigned long long distance_code_count = (remainder & 31) + 1;
@@ -796,6 +809,7 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
           else
           { return !0; }
         }
+
         portable_network_graphics_construct_huffman(code_list, literal_code_count);
         portable_network_graphics_construct_huffman(code_list + literal_code_count, distance_code_count);
 
@@ -1205,7 +1219,7 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
       if (block_final != 0)
       {
         // TEMPORARY
-        unsigned char* temporary_address = (destination_address - destination_size) + 1;
+        unsigned char* temporary_address = (destination_address - destination_size);
         unsigned long long temporary_size = 256;
         while (temporary_size != 0)
         {
@@ -1220,13 +1234,13 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
 
         // TO DO Make this check succeed!
         // Calculate the adler32 from the inflated data.
-        unsigned long long low_adler32 = 1;
-        unsigned long long high_adler32 = 0;
+        unsigned long long adler32_low = 1;
+        unsigned long long adler32_high = 0;
         destination_address -= destination_size;
         while (destination_size != 0)
         {
-          low_adler32 = (low_adler32 + *destination_address) % 65521;
-          high_adler32 = (high_adler32 + low_adler32) % 65521;
+          adler32_low = (adler32_low + *destination_address) % 65521;
+          adler32_high = (adler32_high + adler32_low) % 65521;
           destination_address += 1;
           destination_size -= 1;
         }
@@ -1234,14 +1248,10 @@ unsigned long long portable_network_graphics_inflate(unsigned char* source_addre
         // Drop the remainder.
         source_address -= remainder_size >> 3;
 
-        // Compare the high adler32.
-        unsigned long long source_high_adler32 = (*source_address << 8) | *(source_address + 1);
-        if (high_adler32 != source_high_adler32)
-        { break; }
-
-        // Compare the low adler32.
-        unsigned long long source_low_adler32 = (*(source_address + 2) << 8) | *(source_address + 3);
-        if (low_adler32 != source_low_adler32)
+        // Compare the adler32.
+        unsigned long long adler32_high_source = (*source_address << 8) | *(source_address + 1);
+        unsigned long long adler32_low_source = *(source_address + 2) << 8 | *(source_address + 3);
+        if ((adler32_high != adler32_high_source) || (adler32_low != adler32_low_source))
         { break; }
 
         // We made it out alive... at last.
@@ -1266,7 +1276,7 @@ unsigned long long portable_network_graphics_paeth(unsigned long long horizontal
   unsigned long long diagonal_difference = horizontal + vertical - diagonal - diagonal;
   if ((horizontal + vertical) < (diagonal + diagonal))
   { diagonal_difference = diagonal + diagonal - horizontal - vertical; }
-  diagonal_difference %= 256;
+  diagonal_difference &= 255;
 
   if ((horizontal_difference <= vertical_difference) && (horizontal_difference <= diagonal_difference))
   { return horizontal; }
@@ -1376,6 +1386,8 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
       { chunk_address += chunk_length + 12; }
     }
 
+    // TO DO Write translation routines for adam7 interlacing.
+
     // Translate the contiguous data according to IHDR.
     compressed_address -= compressed_size;
     if ((IHDR_address[16] == 8) && (IHDR_address[17] == 0) && (IHDR_address[18] == 0) && (IHDR_address[19] == 0) && (IHDR_address[20] == 0))
@@ -1403,11 +1415,11 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
         return !0;
       }
 
+      unsigned long long filter_type;
       unsigned long long filtered_count = 0;
-      unsigned long long filter_type = 0;
       while (filtered_count < filtered_size)
       {
-        if (filtered_count % (width + 1) == 0)
+        if ((filtered_count % (width + 1)) == 0)
         {
           filter_type = *filtered_address;
           filtered_address += 1;
@@ -1415,13 +1427,19 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
         }
         else if (filter_type == 0)
         {
-          unsigned long long sample = *filtered_address * 257;
-          *(unsigned short*)destination_address = sample;
-          *(unsigned short*)(destination_address + 2) = sample;
-          *(unsigned short*)(destination_address + 4) = sample;
-          *(unsigned short*)(destination_address + 6) = 65535;
-          if ((tRNS_address != 0) && ((*(tRNS_address + 9) * 257) == sample))
-          { *(unsigned short*)(destination_address + 6) = 0; }
+          *destination_address = *filtered_address;
+          *(destination_address + 1) = *filtered_address;
+          *(destination_address + 2) = *filtered_address;
+          *(destination_address + 3) = *filtered_address;
+          *(destination_address + 4) = *filtered_address;
+          *(destination_address + 5) = *filtered_address;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 9) == *filtered_address))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
 
           destination_address += 8;
           filtered_address += 1;
@@ -1433,16 +1451,22 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
           if ((filtered_count % (width + 1)) >= 2)
           {
             sample += *(destination_address - 8);
-            sample %= 256;
+            sample &= 255;
           }
 
-          sample *= 257;
-          *(unsigned short*)destination_address = sample;
-          *(unsigned short*)(destination_address + 2) = sample;
-          *(unsigned short*)(destination_address + 4) = sample;
-          *(unsigned short*)(destination_address + 6) = 65535;
-          if ((tRNS_address != 0) && ((*(tRNS_address + 9) * 257) == sample))
-          { *(unsigned short*)(destination_address + 6) = 0; }
+          *destination_address = sample;
+          *(destination_address + 1) = sample;
+          *(destination_address + 2) = sample;
+          *(destination_address + 3) = sample;
+          *(destination_address + 4) = sample;
+          *(destination_address + 5) = sample;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 9) == sample))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
 
           destination_address += 8;
           filtered_address += 1;
@@ -1454,16 +1478,22 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
           if (filtered_count >= (width + 1))
           {
             sample += *(destination_address - (width * 8));
-            sample %= 256;
+            sample &= 255;
           }
 
-          sample *= 257;
-          *(unsigned short*)destination_address = sample;
-          *(unsigned short*)(destination_address + 2) = sample;
-          *(unsigned short*)(destination_address + 4) = sample;
-          *(unsigned short*)(destination_address + 6) = 65535;
-          if ((tRNS_address != 0) && ((*(tRNS_address + 9) * 257) == sample))
-          { *(unsigned short*)(destination_address + 6) = 0; }
+          *destination_address = sample;
+          *(destination_address + 1) = sample;
+          *(destination_address + 2) = sample;
+          *(destination_address + 3) = sample;
+          *(destination_address + 4) = sample;
+          *(destination_address + 5) = sample;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 9) == sample))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
 
           destination_address += 8;
           filtered_address += 1;
@@ -1476,15 +1506,25 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
           { sample = *(destination_address - 8); }
 
           if (filtered_count >= (width + 1))
-          { sample += *(destination_address - (width * 8)); }
+          {
+            sample += *(destination_address - (width * 8));
+            sample &= 255;
+          }
 
-          sample = (((sample / 2) + *filtered_address) % 256) * 257;
-          *(unsigned short*)destination_address = sample;
-          *(unsigned short*)(destination_address + 2) = sample;
-          *(unsigned short*)(destination_address + 4) = sample;
-          *(unsigned short*)(destination_address + 6) = 65535;
-          if ((tRNS_address != 0) && ((*(tRNS_address + 9) * 257) == sample))
-          { *(unsigned short*)(destination_address + 6) = 0; }
+          sample = ((sample / 2) + *filtered_address) & 255;
+          *destination_address = sample;
+          *(destination_address + 1) = sample;
+          *(destination_address + 2) = sample;
+          *(destination_address + 3) = sample;
+          *(destination_address + 4) = sample;
+          *(destination_address + 5) = sample;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 9) == sample))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
 
           destination_address += 8;
           filtered_address += 1;
@@ -1492,33 +1532,40 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
         }
         else if (filter_type == 4)
         {
-          unsigned long long dimension_count = 2;
+          unsigned long long dimension_count = 0;
           unsigned long long horizontal = 0;
           if ((filtered_count % (width + 1)) >= 2)
           {
             horizontal = *(destination_address - 8);
-            dimension_count -= 1;
+            dimension_count += 1;
           }
 
           unsigned long long vertical = 0;
           if (filtered_count >= (width + 1))
           {
             vertical = *(destination_address - (width * 8));
-            dimension_count -= 1;
+            dimension_count += 1;
           }
 
           unsigned long long diagonal = 0;
-          if (dimension_count == 0)
-          { diagonal =  *(destination_address - (width * 8) - 8); }
+          if (dimension_count == 2)
+          { diagonal = *((destination_address - 8) - (width * 8)); }
 
           unsigned long long sample = portable_network_graphics_paeth(horizontal, vertical, diagonal);
-          sample = ((sample + *filtered_address) % 256) * 257;
-          *(unsigned short*)destination_address = sample;
-          *(unsigned short*)(destination_address + 2) = sample;
-          *(unsigned short*)(destination_address + 4) = sample;
-          *(unsigned short*)(destination_address + 6) = 65535;
-          if ((tRNS_address != 0) && ((*(tRNS_address + 9) * 257) == sample))
-          { *(unsigned short*)(destination_address + 6) = 0; }
+          sample = (sample + *filtered_address) & 255;
+          *destination_address = sample;
+          *(destination_address + 1) = sample;
+          *(destination_address + 2) = sample;
+          *(destination_address + 3) = sample;
+          *(destination_address + 4) = sample;
+          *(destination_address + 5) = sample;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 9) == sample))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
 
           destination_address += 8;
           filtered_address += 1;
@@ -1537,45 +1584,792 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
     }
     else if ((IHDR_address[16] == 16) && (IHDR_address[17] == 0) && (IHDR_address[18] == 0) && (IHDR_address[19] == 0) && (IHDR_address[20] == 0))
     {
-      unsigned long long filtered_size = portable_network_graphics_read_int(IHDR_address + 8);
-      filtered_size = (filtered_size * 2) + 1;
-      filtered_size *= portable_network_graphics_read_int(IHDR_address + 16);
-      // to do
+      unsigned long long width = portable_network_graphics_read_int(IHDR_address + 8);
+      unsigned long long filtered_size = (width * 2) + 1;
+      filtered_size *= portable_network_graphics_read_int(IHDR_address + 12);
+      if (filtered_size == 0)
+      {
+        memory_free(compressed_size);
+        return !0;
+      }
+
+      unsigned char* filtered_address = memory_allocate(filtered_size);
+      if (filtered_address == 0)
+      {
+        memory_free(compressed_size);
+        return !0;
+      }
+
+      if (portable_network_graphics_inflate(compressed_address, filtered_address) != 0)
+      {
+        memory_free(filtered_size);
+        memory_free(compressed_size);
+        return !0;
+      }
+
+      unsigned long long filter_type;
+      unsigned long long filtered_count = 0;
+      while (filtered_count < filtered_size)
+      {
+        if ((filtered_count % ((width * 2) + 1)) == 0)
+        {
+          filter_type = *filtered_address;
+          filtered_address += 1;
+          filtered_count += 1;
+        }
+        else if (filter_type == 0)
+        {
+          unsigned long long high = *filtered_address;
+          unsigned long long low = *(filtered_address + 1);
+          *destination_address = low;
+          *(destination_address + 1) = high;
+          *(destination_address + 2) = low;
+          *(destination_address + 3) = high;
+          *(destination_address + 4) = low;
+          *(destination_address + 5) = high;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 8) == high) && (*(tRNS_address + 9) == low))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 2;
+          filtered_count += 2;
+        }
+        else if (filter_type == 1)
+        {
+          unsigned long long high = *filtered_address;
+          unsigned long long low = *(filtered_address + 1);
+          if ((filtered_count % ((width * 2) + 1)) >= 3)
+          {
+            low += *(destination_address - 8);
+            low &= 255;
+            high += *(destination_address - 7);
+            high &= 255;
+          }
+
+          *destination_address = low;
+          *(destination_address + 1) = high;
+          *(destination_address + 2) = low;
+          *(destination_address + 3) = high;
+          *(destination_address + 4) = low;
+          *(destination_address + 5) = high;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 8) == high) && (*(tRNS_address + 9) == low))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 2;
+          filtered_count += 2;
+        }
+        else if (filter_type == 2)
+        {
+          unsigned long long high = *filtered_address;
+          unsigned long long low = *(filtered_address + 1);
+          if (filtered_count >= ((width * 2) + 1))
+          {
+            low += *(destination_address - (width * 8));
+            low &= 255;
+            high += *(destination_address - (width * 8) + 1);
+            high &= 255;
+          }
+
+          *destination_address = low;
+          *(destination_address + 1) = high;
+          *(destination_address + 2) = low;
+          *(destination_address + 3) = high;
+          *(destination_address + 4) = low;
+          *(destination_address + 5) = high;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 8) == high) && (*(tRNS_address + 9) == low))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 2;
+          filtered_count += 2;
+        }
+        else if (filter_type == 3)
+        {
+          unsigned long long high = 0;
+          unsigned long long low = 0;
+          if ((filtered_count % ((width * 2) + 1)) >= 3)
+          {
+            low = *(destination_address - 8);
+            high = *(destination_address - 7);
+          }
+
+          if (filtered_count >= ((width * 2) + 1))
+          {
+            low += *(destination_address - (width * 8));
+            low &= 255;
+            high += *(destination_address - (width * 8) + 1);
+            high &= 255;
+          }
+
+          high = ((high / 2) + *filtered_address) & 255;
+          low = ((low / 2) + *(filtered_address + 1)) & 255;
+          *destination_address = low;
+          *(destination_address + 1) = high;
+          *(destination_address + 2) = low;
+          *(destination_address + 3) = high;
+          *(destination_address + 4) = low;
+          *(destination_address + 5) = high;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 8) == high) && (*(tRNS_address + 9) == low))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 2;
+          filtered_count += 2;
+        }
+        else if (filter_type == 4)
+        {
+          unsigned long long dimension_count = 0;
+          unsigned long long horizontal_low = 0;
+          unsigned long long horizontal_high = 0;
+          if ((filtered_count % ((width * 2) + 1)) >= 3)
+          {
+            horizontal_low = *(destination_address - 7);
+            horizontal_high = *(destination_address - 8);
+            dimension_count += 1;
+          }
+
+          unsigned long long vertical_low = 0;
+          unsigned long long vertical_high = 0;
+          if (filtered_count >= ((width * 2) + 1))
+          {
+            vertical_low = *(destination_address - (width * 8));
+            vertical_high = *(destination_address - (width * 8) + 1);
+            dimension_count += 1;
+          }
+
+          unsigned long long diagonal_low = 0;
+          unsigned long long diagonal_high = 0;
+          if (dimension_count == 2)
+          {
+            diagonal_low = *((destination_address - 8) - (width * 8));
+            diagonal_high = *((destination_address - 7) - (width * 8));
+          }
+
+          unsigned long long low = portable_network_graphics_paeth(horizontal_low, vertical_low, diagonal_low);
+          unsigned long long high = portable_network_graphics_paeth(horizontal_high, vertical_high, diagonal_high);
+
+          high = (high + *filtered_address) & 255;
+          low = (low + *(filtered_address + 1)) & 255;
+          *destination_address = low;
+          *(destination_address + 1) = high;
+          *(destination_address + 2) = low;
+          *(destination_address + 3) = high;
+          *(destination_address + 4) = low;
+          *(destination_address + 5) = high;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 8) == high) && (*(tRNS_address + 9) == low))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 2;
+          filtered_count += 2;
+        }
+        else
+        {
+          memory_free(filtered_size);
+          memory_free(compressed_size);
+          return !0;
+        }
+      }
     }
     else if ((IHDR_address[16] == 8) && (IHDR_address[17] == 2) && (IHDR_address[18] == 0) && (IHDR_address[19] == 0) && (IHDR_address[20] == 0))
     {
-      unsigned long long filtered_size = portable_network_graphics_read_int(IHDR_address + 8);
-      filtered_size = (filtered_size * 3) + 1;
-      filtered_size *= portable_network_graphics_read_int(IHDR_address + 16);
-      // to do
+      unsigned long long width = portable_network_graphics_read_int(IHDR_address + 8);
+      unsigned long long filtered_size = (width * 3) + 1;
+      filtered_size *= portable_network_graphics_read_int(IHDR_address + 12);
+      if (filtered_size == 0)
+      {
+        memory_free(compressed_size);
+        return !0;
+      }
+
+      unsigned char* filtered_address = memory_allocate(filtered_size);
+      if (filtered_address == 0)
+      {
+        memory_free(compressed_size);
+        return !0;
+      }
+
+      if (portable_network_graphics_inflate(compressed_address, filtered_address) != 0)
+      {
+        memory_free(filtered_size);
+        memory_free(compressed_size);
+        return !0;
+      }
+
+      unsigned long long filter_type;
+      unsigned long long filtered_count = 0;
+      while (filtered_count < filtered_size)
+      {
+        if ((filtered_count % ((width * 3) + 1)) == 0)
+        {
+          filter_type = *filtered_address;
+          filtered_address += 1;
+          filtered_count += 1;
+        }
+        else if (filter_type == 0)
+        {
+          unsigned char red = *filtered_address;
+          unsigned char green = *(filtered_address + 1);
+          unsigned char blue = *(filtered_address + 2);
+          *destination_address = red;
+          *(destination_address + 1) = red;
+          *(destination_address + 2) = green;
+          *(destination_address + 3) = green;
+          *(destination_address + 4) = blue;
+          *(destination_address + 5) = blue;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 9) == red) && (*(tRNS_address + 11) == green) && (*(tRNS_address + 13) == blue))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 3;
+          filtered_count += 3;
+        }
+        else if (filter_type == 1)
+        {
+          unsigned long long red = *filtered_address;
+          unsigned long long green = *(filtered_address + 1);
+          unsigned long long blue = *(filtered_address + 2);
+          if ((filtered_count % ((width * 3) + 1)) >= 4)
+          {
+            red += *(destination_address - 8);
+            red &= 255;
+            green += *(destination_address - 6);
+            green &= 255;
+            blue += *(destination_address - 4);
+            blue &= 255;
+          }
+
+          *destination_address = red;
+          *(destination_address + 1) = red;
+          *(destination_address + 2) = green;
+          *(destination_address + 3) = green;
+          *(destination_address + 4) = blue;
+          *(destination_address + 5) = blue;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 9) == red) && (*(tRNS_address + 11) == green) && (*(tRNS_address + 13) == blue))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 3;
+          filtered_count += 3;
+        }
+        else if (filter_type == 2)
+        {
+          unsigned long long red = *filtered_address;
+          unsigned long long green = *(filtered_address + 1);
+          unsigned long long blue = *(filtered_address + 2);
+          if (filtered_count >= ((width * 3) + 1))
+          {
+            red += *(destination_address - (width * 8));
+            red &= 255;
+            green += *((destination_address + 2) - (width * 8));
+            green &= 255;
+            blue += *((destination_address + 4) - (width * 8));
+            blue &= 255;
+          }
+
+          *destination_address = red;
+          *(destination_address + 1) = red;
+          *(destination_address + 2) = green;
+          *(destination_address + 3) = green;
+          *(destination_address + 4) = blue;
+          *(destination_address + 5) = blue;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 9) == red) && (*(tRNS_address + 11) == green) && (*(tRNS_address + 13) == blue))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 3;
+          filtered_count += 3;
+        }
+        else if (filter_type == 3)
+        {
+          unsigned long long red = 0;
+          unsigned long long green = 0;
+          unsigned long long blue = 0;
+          if ((filtered_count % ((width * 3) + 1)) >= 4)
+          {
+            red = *(destination_address - 8);
+            green = *(destination_address - 6);
+            blue = *(destination_address - 4);
+          }
+
+          if (filtered_count >= ((width * 3) + 1))
+          {
+            red += *(destination_address - (width * 8));
+            red &= 255;
+            green += *((destination_address + 2) - (width * 8));
+            green &= 255;
+            blue += *((destination_address + 4) - (width * 8));
+            blue &= 255;
+          }
+
+          red = ((red / 2) + *filtered_address) & 255;
+          green = ((green / 2) + *(filtered_address + 1)) & 255;
+          blue = ((blue / 2) + *(filtered_address + 2)) & 255;
+          *destination_address = red;
+          *(destination_address + 1) = red;
+          *(destination_address + 2) = green;
+          *(destination_address + 3) = green;
+          *(destination_address + 4) = blue;
+          *(destination_address + 5) = blue;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 9) == red) && (*(tRNS_address + 11) == green) && (*(tRNS_address + 13) == blue))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 3;
+          filtered_count += 3;
+        }
+        else if (filter_type == 4)
+        {
+          unsigned long long dimension_count = 0;
+          unsigned long long red_horizontal = 0;
+          unsigned long long green_horizontal = 0;
+          unsigned long long blue_horizontal = 0;
+          if ((filtered_count % ((width * 3) + 1)) >= 4)
+          {
+            red_horizontal = *(destination_address - 8);
+            green_horizontal = *(destination_address - 6);
+            blue_horizontal = *(destination_address - 4);
+            dimension_count += 1;
+          }
+
+          unsigned long long red_vertical = 0;
+          unsigned long long green_vertical = 0;
+          unsigned long long blue_vertical = 0;
+          if (filtered_count >= ((width * 3) + 1))
+          {
+            red_vertical = *(destination_address - (width * 8));
+            green_vertical = *((destination_address + 2) - (width * 8));
+            blue_vertical = *((destination_address + 4) - (width * 8));
+            dimension_count += 1;
+          }
+
+          unsigned long long red_diagonal = 0;
+          unsigned long long green_diagonal = 0;
+          unsigned long long blue_diagonal = 0;
+          if (dimension_count == 2)
+          {
+            red_diagonal = *((destination_address - 8) - (width * 8));
+            green_diagonal = *((destination_address - 6) - (width * 8));
+            blue_diagonal = *((destination_address - 4) - (width * 8));
+          }
+
+          unsigned long long red = portable_network_graphics_paeth(red_horizontal, red_vertical, red_diagonal);
+          unsigned long long green = portable_network_graphics_paeth(green_horizontal, green_vertical, green_diagonal);
+          unsigned long long blue = portable_network_graphics_paeth(blue_horizontal, blue_vertical, blue_diagonal);
+
+          red = (red + *filtered_address) & 255;
+          green = (green + *(filtered_address + 1)) & 255;
+          blue = (blue + *(filtered_address + 2)) & 255;
+          *destination_address = red;
+          *(destination_address + 1) = red;
+          *(destination_address + 2) = green;
+          *(destination_address + 3) = green;
+          *(destination_address + 4) = blue;
+          *(destination_address + 5) = blue;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0) && (*(tRNS_address + 9) == red) && (*(tRNS_address + 11) == green) && (*(tRNS_address + 13) == blue))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 3;
+          filtered_count += 3;
+        }
+        else
+        {
+          memory_free(filtered_size);
+          memory_free(compressed_size);
+          return !0;
+        }
+      }
+      memory_free(filtered_size);
+      memory_free(compressed_size);
+      return 0;
     }
     else if ((IHDR_address[16] == 16) && (IHDR_address[17] == 2) && (IHDR_address[18] == 0) && (IHDR_address[19] == 0) && (IHDR_address[20] == 0))
     {
-      unsigned long long filtered_size = portable_network_graphics_read_int(IHDR_address + 8);
-      filtered_size = (filtered_size * 6) + 1;
-      filtered_size *= portable_network_graphics_read_int(IHDR_address + 16);
-      // to do
+      unsigned long long width = portable_network_graphics_read_int(IHDR_address + 8);
+      unsigned long long filtered_size = (width * 6) + 1;
+      filtered_size *= portable_network_graphics_read_int(IHDR_address + 12);
+      if (filtered_size == 0)
+      {
+        memory_free(compressed_size);
+        return !0;
+      }
+
+      unsigned char* filtered_address = memory_allocate(filtered_size);
+      if (filtered_address == 0)
+      {
+        memory_free(compressed_size);
+        return !0;
+      }
+
+      if (portable_network_graphics_inflate(compressed_address, filtered_address) != 0)
+      {
+        memory_free(filtered_size);
+        memory_free(compressed_size);
+        return !0;
+      }
+
+      unsigned long long filter_type;
+      unsigned long long filtered_count = 0;
+      while (filtered_count < filtered_size)
+      {
+        if ((filtered_count % ((width * 6) + 1)) == 0)
+        {
+          filter_type = *filtered_address;
+          filtered_address += 1;
+          filtered_count += 1;
+        }
+        else if (filter_type == 0)
+        {
+          *destination_address = *(filtered_address + 1);
+          *(destination_address + 1) = *filtered_address;
+          *(destination_address + 2) = *(filtered_address + 3);
+          *(destination_address + 3) = *(filtered_address + 2);
+          *(destination_address + 4) = *(filtered_address + 5);
+          *(destination_address + 5) = *(filtered_address + 4);
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0)
+            && (*(tRNS_address + 8) == *filtered_address)
+            && (*(tRNS_address + 9) == *(filtered_address + 1))
+            && (*(tRNS_address + 10) == *(filtered_address + 2))
+            && (*(tRNS_address + 11) == *(filtered_address + 3))
+            && (*(tRNS_address + 12) == *(filtered_address + 4))
+            && (*(tRNS_address + 13) == *(filtered_address + 5)))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 6;
+          filtered_count += 6;
+        }
+        else if (filter_type == 1)
+        {
+          unsigned long long red_high = *filtered_address;
+          unsigned long long red_low = *(filtered_address + 1);
+          unsigned long long green_high = *(filtered_address + 2);
+          unsigned long long green_low = *(filtered_address + 3);
+          unsigned long long blue_high = *(filtered_address + 4);
+          unsigned long long blue_low = *(filtered_address + 5);
+          if ((filtered_count % ((width * 6) + 1)) >= 7)
+          {
+            red_low += *(destination_address - 8);
+            red_low &= 255;
+            red_high += *(destination_address - 7);
+            red_high &= 255;
+            green_low += *(destination_address - 6);
+            green_low &= 255;
+            green_high += *(destination_address - 5);
+            green_high &= 255;
+            blue_low += *(destination_address - 4);
+            blue_low &= 255;
+            blue_high += *(destination_address - 3);
+            blue_high &= 255;
+          }
+
+          *destination_address = red_low;
+          *(destination_address + 1) = red_high;
+          *(destination_address + 2) = green_low;
+          *(destination_address + 3) = green_high;
+          *(destination_address + 4) = blue_low;
+          *(destination_address + 5) = blue_high;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0)
+            && (*(tRNS_address + 8) == red_high)
+            && (*(tRNS_address + 9) == red_low)
+            && (*(tRNS_address + 10) == green_high)
+            && (*(tRNS_address + 11) == green_low)
+            && (*(tRNS_address + 12) == blue_high)
+            && (*(tRNS_address + 13) == blue_low))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 6;
+          filtered_count += 6;
+        }
+        else if (filter_type == 2)
+        {
+          unsigned long long red_high = *filtered_address;
+          unsigned long long red_low = *(filtered_address + 1);
+          unsigned long long green_high = *(filtered_address + 2);
+          unsigned long long green_low = *(filtered_address + 3);
+          unsigned long long blue_high = *(filtered_address + 4);
+          unsigned long long blue_low = *(filtered_address + 5);
+          if (filtered_count >= ((width * 6) + 1))
+          {
+            red_low += *(destination_address - (width * 8));
+            red_low &= 255;
+            red_high += *((destination_address + 1) - (width * 8));
+            red_high &= 255;
+            green_low += *((destination_address + 2) - (width * 8));
+            green_low &= 255;
+            green_high += *((destination_address + 3) - (width * 8));
+            green_high &= 255;
+            blue_low += *((destination_address + 4) - (width * 8));
+            blue_low &= 255;
+            blue_high += *((destination_address + 5) - (width * 8));
+            blue_high &= 255;
+          }
+
+          *destination_address = red_low;
+          *(destination_address + 1) = red_high;
+          *(destination_address + 2) = green_low;
+          *(destination_address + 3) = green_high;
+          *(destination_address + 4) = blue_low;
+          *(destination_address + 5) = blue_high;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0)
+            && (*(tRNS_address + 8) == red_high)
+            && (*(tRNS_address + 9) == red_low)
+            && (*(tRNS_address + 10) == green_high)
+            && (*(tRNS_address + 11) == green_low)
+            && (*(tRNS_address + 12) == blue_high)
+            && (*(tRNS_address + 13) == blue_low))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 6;
+          filtered_count += 6;
+        }
+        else if (filter_type == 3)
+        {
+          unsigned long long red_low = 0;
+          unsigned long long red_high = 0;
+          unsigned long long green_low = 0;
+          unsigned long long green_high = 0;
+          unsigned long long blue_low = 0;
+          unsigned long long blue_high = 0;
+          if ((filtered_count % ((width * 6) + 1)) >= 7)
+          {
+            red_low = *(destination_address - 8);
+            red_high = *(destination_address - 7);
+            green_low = *(destination_address - 6);
+            green_high = *(destination_address - 5);
+            blue_low = *(destination_address - 4);
+            blue_high = *(destination_address - 3);
+          }
+
+          if (filtered_count >= ((width * 6) + 1))
+          {
+            red_low += *(destination_address - (width * 8));
+            red_low &= 255;
+            red_high += *((destination_address + 1) - (width * 8));
+            red_high &= 255;
+            green_low += *((destination_address + 2) - (width * 8));
+            green_low &= 255;
+            green_high += *((destination_address + 3) - (width * 8));
+            green_high &= 255;
+            blue_low += *((destination_address + 4) - (width * 8));
+            blue_low &= 255;
+            blue_high += *((destination_address + 5) - (width * 8));
+            blue_high &= 255;
+          }
+
+          red_high = ((red_high / 2) + *filtered_address) & 255;
+          red_low = ((red_low / 2) + *(filtered_address + 1)) & 255;
+          green_high = ((green_high / 2) + *(filtered_address + 2)) & 255;
+          green_low = ((green_low / 2) + *(filtered_address + 3)) & 255;
+          blue_high = ((blue_high / 2) + *(filtered_address + 4)) & 255;
+          blue_low = ((blue_low / 2) + *(filtered_address + 5)) & 255;
+
+          *destination_address = red_low;
+          *(destination_address + 1) = red_high;
+          *(destination_address + 2) = green_low;
+          *(destination_address + 3) = green_high;
+          *(destination_address + 4) = blue_low;
+          *(destination_address + 5) = blue_high;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0)
+            && (*(tRNS_address + 8) == red_high)
+            && (*(tRNS_address + 9) == red_low)
+            && (*(tRNS_address + 10) == green_high)
+            && (*(tRNS_address + 11) == green_low)
+            && (*(tRNS_address + 12) == blue_high)
+            && (*(tRNS_address + 13) == blue_low))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 6;
+          filtered_count += 6;
+        }
+        else if (filter_type == 4)
+        {
+          unsigned long long dimension_count = 0;
+          unsigned long long red_horizontal_low = 0;
+          unsigned long long red_horizontal_high = 0;
+          unsigned long long green_horizontal_low = 0;
+          unsigned long long green_horizontal_high = 0;
+          unsigned long long blue_horizontal_low = 0;
+          unsigned long long blue_horizontal_high = 0;
+          if ((filtered_count % ((width * 6) + 1)) >= 7)
+          {
+            red_horizontal_low = *(destination_address - 8);
+            red_horizontal_high = *(destination_address - 7);
+            green_horizontal_low = *(destination_address - 6);
+            green_horizontal_high = *(destination_address - 5);
+            blue_horizontal_low = *(destination_address - 4);
+            blue_horizontal_high = *(destination_address - 3);
+            dimension_count += 1;
+          }
+
+          unsigned long long red_vertical_low = 0;
+          unsigned long long red_vertical_high = 0;
+          unsigned long long green_vertical_low = 0;
+          unsigned long long green_vertical_high = 0;
+          unsigned long long blue_vertical_low = 0;
+          unsigned long long blue_vertical_high = 0;
+          if (filtered_count >= ((width * 6) + 1))
+          {
+            red_vertical_low = *(destination_address - (width * 8));
+            red_vertical_high = *((destination_address + 1) - (width * 8));
+            green_vertical_low = *((destination_address + 2) - (width * 8));
+            green_vertical_high = *((destination_address + 3) - (width * 8));
+            blue_vertical_low = *((destination_address + 4) - (width * 8));
+            blue_vertical_high = *((destination_address + 5) - (width * 8));
+            dimension_count += 1;
+          }
+
+          unsigned long long red_diagonal_low = 0;
+          unsigned long long red_diagonal_high = 0;
+          unsigned long long green_diagonal_low = 0;
+          unsigned long long green_diagonal_high = 0;
+          unsigned long long blue_diagonal_low = 0;
+          unsigned long long blue_diagonal_high = 0;
+          if (dimension_count == 2)
+          {
+            red_diagonal_low = *((destination_address - 8) - (width * 8));
+            red_diagonal_high = *((destination_address - 7) - (width * 8));
+            green_diagonal_low = *((destination_address - 6) - (width * 8));
+            green_diagonal_high = *((destination_address - 5) - (width * 8));
+            blue_diagonal_low = *((destination_address - 4) - (width * 8));
+            blue_diagonal_high = *((destination_address - 3) - (width * 8));
+          }
+
+          unsigned long long red_low = portable_network_graphics_paeth(red_horizontal_low, red_vertical_low, red_diagonal_low);
+          unsigned long long red_high = portable_network_graphics_paeth(red_horizontal_high, red_vertical_high, red_diagonal_high);
+          unsigned long long green_low = portable_network_graphics_paeth(green_horizontal_low, green_vertical_low, green_diagonal_low);
+          unsigned long long green_high = portable_network_graphics_paeth(green_horizontal_high, green_vertical_high, green_diagonal_high);
+          unsigned long long blue_low = portable_network_graphics_paeth(blue_horizontal_low, blue_vertical_low, blue_diagonal_low);
+          unsigned long long blue_high = portable_network_graphics_paeth(blue_horizontal_high, blue_vertical_high, blue_diagonal_high);
+
+          red_high = (red_high + *filtered_address) & 255;
+          red_low = (red_low + *(filtered_address + 1)) & 255;
+          green_high = (green_high + *(filtered_address + 2)) & 255;
+          green_low = (green_low + *(filtered_address + 3)) & 255;
+          blue_high = (blue_high + *(filtered_address + 4)) & 255;
+          blue_low = (blue_low + *(filtered_address + 5)) & 255;
+
+          *destination_address = red_low;
+          *(destination_address + 1) = red_high;
+          *(destination_address + 2) = green_low;
+          *(destination_address + 3) = green_high;
+          *(destination_address + 4) = blue_low;
+          *(destination_address + 5) = blue_high;
+          *(destination_address + 6) = 255;
+          *(destination_address + 7) = 255;
+          if ((tRNS_address != 0)
+            && (*(tRNS_address + 8) == red_high)
+            && (*(tRNS_address + 9) == red_low)
+            && (*(tRNS_address + 10) == green_high)
+            && (*(tRNS_address + 11) == green_low)
+            && (*(tRNS_address + 12) == blue_high)
+            && (*(tRNS_address + 13) == blue_low))
+          {
+            *(destination_address + 6) = 0;
+            *(destination_address + 7) = 0;
+          }
+
+          destination_address += 8;
+          filtered_address += 6;
+          filtered_count += 6;
+        }
+        else
+        {
+          memory_free(filtered_size);
+          memory_free(compressed_size);
+          return !0;
+        }
+      }
+      memory_free(filtered_size);
+      memory_free(compressed_size);
+      return 0;
     }
     else if ((IHDR_address[16] == 8) && (IHDR_address[17] == 3) && (IHDR_address[18] == 0) && (IHDR_address[19] == 0) && (IHDR_address[20] == 0))
     {
-      unsigned long long filtered_size = portable_network_graphics_read_int(IHDR_address + 8);
-      filtered_size += 1;
-      filtered_size *= portable_network_graphics_read_int(IHDR_address + 16);
-      // to do
+      // TO DO
     }
     else if ((IHDR_address[16] == 8) && (IHDR_address[17] == 4) && (IHDR_address[18] == 0) && (IHDR_address[19] == 0) && (IHDR_address[20] == 0))
     {
-      unsigned long long filtered_size = portable_network_graphics_read_int(IHDR_address + 8);
-      filtered_size = (filtered_size * 2) + 1;
-      filtered_size *= portable_network_graphics_read_int(IHDR_address + 16);
-      // to do
+      // TO DO
     }
     else if ((IHDR_address[16] == 16) && (IHDR_address[17] == 4) && (IHDR_address[18] == 0) && (IHDR_address[19] == 0) && (IHDR_address[20] == 0))
     {
-      unsigned long long filtered_size = portable_network_graphics_read_int(IHDR_address + 8);
-      filtered_size = (filtered_size * 4) + 1;
-      filtered_size *= portable_network_graphics_read_int(IHDR_address + 16);
-      // to do
+      // TO DO
     }
     else if ((IHDR_address[16] == 8) && (IHDR_address[17] == 6) && (IHDR_address[18] == 0) && (IHDR_address[19] == 0) && (IHDR_address[20] == 0))
     {
@@ -1602,11 +2396,8 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
         return !0;
       }
 
-      // TEMPORARY
-      console_append_character(65); console_append_character(13); console_append_character(10); console_write();
-
+      unsigned long long filter_type;
       unsigned long long filtered_count = 0;
-      unsigned long long filter_type = 0;
       while (filtered_count < filtered_size)
       {
         if (filtered_size % ((width * 4) + 1) == 0)
@@ -1617,7 +2408,8 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
         }
         else if (filter_type == 0)
         {
-          *(unsigned short*)destination_address = *filtered_address * 257;
+          *destination_address = *filtered_address;
+          *(destination_address + 1) = *filtered_address;
           destination_address += 2;
           filtered_address += 1;
           filtered_count += 1;
@@ -1626,12 +2418,10 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
         {
           unsigned long long sample = *filtered_address;
           if ((filtered_count % ((width * 4) + 1)) >= 5)
-          {
-            sample += *(destination_address - 8);
-            sample %= 256;
-          }
+          { sample += *(destination_address - 8); }
 
-          *(unsigned short*)destination_address = sample * 257;
+          *destination_address = sample;
+          *(destination_address + 1) = sample;
           destination_address += 2;
           filtered_address += 1;
           filtered_count += 1;
@@ -1640,12 +2430,10 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
         {
           unsigned long long sample = *filtered_address;
           if (filtered_count >= ((width * 4) + 1))
-          {
-            sample += *(destination_address - (width * 8));
-            sample %= 256;
-          }
+          { sample += *(destination_address - (width * 8)); }
 
-          *(unsigned short*)destination_address = sample * 257;
+          *destination_address = sample;
+          *(destination_address + 1) = sample;
           destination_address += 2;
           filtered_address += 1;
           filtered_count += 1;
@@ -1659,7 +2447,8 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
           if (filtered_count >= ((width * 4) + 1))
           { sample += *(destination_address - (width * 8)); }
 
-          *(unsigned short*)destination_address = (((sample / 2) + *filtered_address) % 256) * 257;
+          *destination_address = (sample / 2) + *filtered_address;
+          *(destination_address + 1) = (sample / 2) + *filtered_address;
           destination_address += 2;
           filtered_address += 1;
           filtered_count += 1;
@@ -1683,10 +2472,11 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
 
           unsigned long long diagonal = 0;
           if (dimension_count == 2)
-          { diagonal = *(destination_address - (width * 8) - 8); }
+          { diagonal = *((destination_address - 8) - (width * 8)); }
 
-          unsigned long long sample = portable_network_graphics_paeth(horizontal, vertical, diagonal);
-          *(unsigned short*)destination_address = ((sample + *filtered_address) % 256) * 257;
+          horizontal = portable_network_graphics_paeth(horizontal, vertical, diagonal);
+          *destination_address = horizontal + *filtered_address;
+          *(destination_address + 1) = horizontal + *filtered_address;
           destination_address += 2;
           filtered_address += 1;
           filtered_count += 1;
@@ -1727,8 +2517,8 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
         return !0;
       }
 
+      unsigned long long filter_type;
       unsigned long long filtered_count = 0;
-      unsigned long long filter_type = 0;
       while (filtered_count < filtered_size)
       {
         if ((filtered_count % ((width * 8) + 1)) == 0)
@@ -1739,76 +2529,100 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
         }
         else if (filter_type == 0)
         {
-          *destination_address = *filtered_address;
-          destination_address += 1;
-          filtered_address += 1;
-          filtered_count += 1;
+          *destination_address = *(filtered_address + 1);
+          *(destination_address + 1) = *filtered_address;
+          destination_address += 2;
+          filtered_address += 2;
+          filtered_count += 2;
         }
         else if (filter_type == 1)
         {
-          unsigned long long sample = *filtered_address;
+          unsigned long long sample_high = *filtered_address;
+          unsigned long long sample_low = *(filtered_address + 1);
           if ((filtered_count % ((width * 8) + 1)) >= 9)
           {
-            sample += *(destination_address - 8);
-            sample %= 256;
+            sample_low += *(destination_address - 8);
+            sample_high += *(destination_address - 7);
           }
 
-          *destination_address = sample;
-          destination_address += 1;
-          filtered_address += 1;
-          filtered_size += 1;
+          *destination_address = sample_low;
+          *(destination_address + 1) = sample_high;
+          destination_address += 2;
+          filtered_address += 2;
+          filtered_size += 2;
         }
         else if (filter_type == 2)
         {
-          unsigned long long sample = *filtered_address;
+          unsigned long long sample_high = *filtered_address;
+          unsigned long long sample_low = *(filtered_address + 1);
           if (filtered_count >= ((width * 8) + 1))
           {
-            sample += *(destination_address - (width * 8));
-            sample %= 256;
+            sample_low += *(destination_address - (width * 8));
+            sample_high += *(destination_address - (width * 8) + 1);
           }
 
-          *destination_address = sample;
-          destination_address += 1;
-          filtered_address += 1;
-          filtered_count += 1;
+          *destination_address = sample_low;
+          *(destination_address + 1) = sample_high;
+          destination_address += 2;
+          filtered_address += 2;
+          filtered_count += 2;
         }
         else if (filter_type == 3)
         {
-          unsigned long long sample = 0;
+          unsigned long long sample_high = 0;
+          unsigned long long sample_low = 0;
           if ((filtered_count % ((width * 8) + 1)) >= 9)
-          { sample = *(destination_address - 8); }
+          {
+            sample_low = *(destination_address - 8);
+            sample_high = *(destination_address - 7);
+          }
 
           if (filtered_count >= ((width * 8) + 1))
-          { sample += *(destination_address - (width * 8)); }
+          {
+            sample_low += *(destination_address - (width * 8));
+            sample_high += *(destination_address - (width * 8) + 1);
+          }
 
-          *destination_address = ((sample / 2) + *filtered_address) % 256;
-          destination_address += 1;
-          filtered_address += 1;
-          filtered_count += 1;
+          *destination_address = (sample_low / 2) + *(filtered_address + 1);
+          *(destination_address + 1) = (sample_high / 2) + *filtered_address;
+          destination_address += 2;
+          filtered_address += 2;
+          filtered_count += 2;
         }
         else if (filter_type == 4)
         {
           unsigned long long dimension_count = 0;
-          unsigned long long horizontal = 0;
+          unsigned long long horizontal_low = 0;
+          unsigned long long horizontal_high = 0;
           if ((filtered_count % ((width * 8) + 1)) >= 9)
           {
-            horizontal = *(destination_address - 8);
+            horizontal_low = *(destination_address - 8);
+            horizontal_high = *(destination_address - 7);
             dimension_count += 1;
           }
 
-          unsigned long long vertical = 0;
+          unsigned long long vertical_low = 0;
+          unsigned long long vertical_high = 0;
           if (filtered_count >= ((width * 8) + 1))
           {
-            vertical = *(destination_address - (width * 8));
+            vertical_low = *(destination_address - (width * 8));
+            vertical_high = *(destination_address - (width * 8) + 1);
             dimension_count += 1;
           }
 
-          unsigned long long diagonal = 0;
+          unsigned long long diagonal_low = 0;
+          unsigned long long diagonal_high = 0;
           if (dimension_count == 2)
-          { diagonal = *(destination_address - (width * 8) - 8); }
+          {
+            diagonal_low = *((destination_address - 8) - (width * 8));
+            diagonal_high = *((destination_address - 7) - (width * 8));
+          }
 
-          unsigned long long sample = portable_network_graphics_paeth(horizontal, vertical, diagonal);
-          *destination_address = (sample + *filtered_address) % 256;
+          horizontal_low = portable_network_graphics_paeth(horizontal_low, vertical_low, diagonal_low);
+          *destination_address = horizontal_low + *(filtered_address + 1);
+          horizontal_high = portable_network_graphics_paeth(horizontal_high, vertical_high, diagonal_high);
+          *(destination_address + 1) = horizontal_high + *filtered_address;
+
           destination_address += 1;
           filtered_address += 1;
           filtered_size += 1;
@@ -1829,3 +2643,4 @@ unsigned long long portable_network_graphics_decode(unsigned char* source_addres
   }
   return !0;
 }
+#endif

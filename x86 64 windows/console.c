@@ -1,25 +1,25 @@
-#ifndef CONSOLE
-#define CONSOLE
+#ifndef console
+#define console
 
-unsigned char console[1024];
-unsigned long long console_size = 0;
+unsigned char console_buffer[1024];
+unsigned long long console_buffer_size = 0;
 
 
 void console_write()
 {
   void* console_handle = GetStdHandle(-11);
   unsigned long byte_count = 0;
-  WriteFile(console_handle, console, console_size, &byte_count, 0);
-  console_size = 0;
+  WriteFile(console_handle, console_buffer, console_buffer_size, &byte_count, 0);
+  console_buffer_size = 0;
 }
 
 
 void console_append_character(unsigned long long value)
 {
-  if (console_size != 1024)
+  if (console_buffer_size != 1024)
   {
-    console[console_size] = value;
-    console_size += 1;
+    *(console_buffer + console_buffer_size) = value;
+    console_buffer_size += 1;
   }
 }
 
@@ -28,8 +28,8 @@ void console_append_unsigned_integer(unsigned long long value)
 {
   if (value == 0)
   {
-    console[console_size] = 48;
-    console_size += 1;
+    *(console_buffer + console_buffer_size) = 48;
+    console_buffer_size += 1;
   }
   else
   {
@@ -43,13 +43,13 @@ void console_append_unsigned_integer(unsigned long long value)
       character_address += 1;
       character_count += 1;
     }
-    unsigned char* console_address = console + console_size;
-    console_size += character_count;
+    unsigned char* console_buffer_address = console_buffer + console_buffer_size;
+    console_buffer_size += character_count;
     while (character_count != 0)
     {
       character_address -= 1;
-      *console_address = *character_address;
-      console_address += 1;
+      *console_buffer_address = *character_address;
+      console_buffer_address += 1;
       character_count -= 1;
     }
   }

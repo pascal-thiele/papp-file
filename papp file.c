@@ -1,5 +1,5 @@
-#ifndef PAPP_FILE
-#define PAPP_FILE
+#ifndef papp_file
+#define papp_file
 
 
 // Returns the amount of bytes needed to encode source_size bytes from source_address to a papp file. Source lists two bytes red, two bytes green, two bytes blue and two bytes opacity.

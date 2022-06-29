@@ -1,22 +1,22 @@
-#ifndef MEMORY
-#define MEMORY
-#define memory_capacity 134217728
+#ifndef memory
+#define memory
 
-unsigned char* memory;
+unsigned char* memory_address;
 unsigned long long memory_size = 0;
+unsigned long long memory_capacity = 134217728;
 
 
 unsigned char* memory_allocate(unsigned long long size)
 {
-  unsigned char* address = 0;
+  unsigned char* allocated_address = 0;
   size += 7;
   size ^= size & 7;
   if ((memory_capacity >= size) && ((memory_capacity - size) >= memory_size))
   {
-    address = memory + memory_size;
+    allocated_address = memory_address + memory_size;
     memory_size += size;
   }
-  return address;
+  return allocated_address;
 }
 
 
