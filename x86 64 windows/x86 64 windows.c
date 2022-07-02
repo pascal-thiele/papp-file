@@ -88,7 +88,7 @@ int main()
     // Read the file.
     unsigned char* source_file_address = 0;
     unsigned long long source_file_size = 0;
-    void* file_handle = CreateFileA(file_name_address, GENERIC_READ, 0, 0, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    void* file_handle = CreateFileA(file_name_address, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (file_handle != -1)
     {
       if (GetFileSizeEx(file_handle, &source_file_size) != 0)
@@ -122,13 +122,24 @@ int main()
         destination_file_size = papp_file_encode_size(source_file_address, source_file_size);
         destination_file_address = memory_allocate(destination_file_size);
         if (destination_file_address != 0)
-        { papp_file_encode(source_file_address, source_file_size, destination_file_address); }
+        {
+          *(unsigned int*)destination_file_address = source_file_size;
+          unsigned long long height = source_file_size >> 32;
+          if (height == 0)
+          { height = 1; }
+          *(unsigned int*)(destination_file_address + 4) = height;
+          *(unsigned int*)(destination_file_address + 8) = 1;
+          *(unsigned int*)(destination_file_address + 12) = 1;
+          papp_file_encode(source_file_address, source_file_size, destination_file_address);
+        }
       }
       else if (compare_type_PNG(file_type_address, file_type_size) == 0)
       {
         unsigned long long decoded_file_size = portable_network_graphics_decode_size(source_file_address);
         if (decoded_file_size != 0)
         {
+          unsigned long long width = portable_network_graphics_read_int(source_file_address + 16);
+          unsigned long long height = portable_network_graphics_read_int(source_file_address + 20);
           unsigned char* decoded_file_address = memory_allocate(decoded_file_size);
           if (decoded_file_address != 0)
           {
@@ -137,7 +148,13 @@ int main()
               destination_file_size = papp_file_encode_size(decoded_file_address, decoded_file_size);
               destination_file_address = memory_allocate(destination_file_size);
               if (destination_file_address != 0)
-              { papp_file_encode(decoded_file_address, decoded_file_size, destination_file_address); }
+              {
+                *(unsigned int*)destination_file_address = width;
+                *(unsigned int*)(destination_file_address + 4) = height;
+                *(unsigned int*)(destination_file_address + 8) = 1;
+                *(unsigned int*)(destination_file_address + 12) = 1;
+                papp_file_encode(decoded_file_address, decoded_file_size, destination_file_address);
+              }
             }
             memory_free(decoded_file_size);
           }

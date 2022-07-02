@@ -3,7 +3,7 @@
 
 unsigned char* memory_address;
 unsigned long long memory_size = 0;
-unsigned long long memory_capacity = 134217728;
+unsigned long long memory_capacity = 1073741824;
 
 
 unsigned char* memory_allocate(unsigned long long size)

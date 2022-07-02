@@ -1,3 +1,6 @@
+# TO DO The compression ratio fluctuates a lot from photograph to photograph, rework the design for overall better compression ratio. Also, chunks and rubble being of differente size bothers me, Pascal Thiele.
+# NOTE Maybe build a palette according to a index algorithm, instead of the occurrence count.
+
 Colors consist of two bytes red, two bytes green, two bytes blue and two bytes opacity. Colors are assigned to cells in a four dimensional raster, from left to right for width cells, from top to bottom for height cells, from front to back for depth cells and from kata to ana for trength cells.
 
 header byte layout
@@ -7,15 +10,23 @@ header byte layout
 12 trength in cells
 16 chunk list
 
-For every cell in the four dimensional raster, chunks define the difference in red, green, blue and opacity to their preceding chunk. The first chunk refers to zero red, zero green, zero blue and zero opacity instead. Differences are signed numbers, using the two's complement, in which a value is negated by flipping all bits and adding one. To keep differences as small as possible, red, green, blue or opacity may be wrapped. For example, a red of 78 and a difference of -100, result in a red of 65514.
+For every cell in the four dimensional raster, chunks define the difference in red, green, blue and opacity to their preceding chunk. The first chunk refers to zero red, zero green, zero blue and zero opacity instead. Differences are signed numbers, using the two's complement, in which a value is negated by flipping all bits and adding one. To keep differences as small as possible, red, green, blue or opacity may be wrapped. For example, a red of +78 and a difference of -100, result in a red of +65514. All values are stored with the least significant data bit in the lowermost memory bit, ascending to the most significant data bit in the uppermost memory bit.
 
-Chunks count consecutive occurrences, to encode up to fifteen cells in one. An occurrence count of zero indicates that differences continue in the following chunk. For each red, green, blue and opacity, one cell encodes a difference of -64 to 63, two cells encode a difference of -8192 to 8191, three cells encode a difference of -32768 to 32767. Even if a difference is stored across multiple chunks, all chunks contain the sign in the most significant bit of the difference, so that
-first_chunk_difference + second_chunk_difference * 128 + third_chunk_difference * 32768 = difference.
+Chunks count consecutive occurrences, to encode up to fifteen cells in one. For each red, green, blue and opacity, one chunk can encode a difference of -4096 to +4095, but rubble may follow to increase the range to -32768 to +32767. In the case rubble follows, the occurrence count of a chunk is zero and the most significant three bits of differences are stored in rubble. The most significant bit of each chunk difference is a sign and the most significant bit of each rubble difference is a sign, so that
+chunk_difference + (rubble_difference * 8192) = difference
 
 chunk bit layout
 0 occurrence count
 4 red difference
-11 green difference
-18 blue difference
-25 opacity difference
-32
+17 green difference
+30 blue difference
+43 opacity difference
+56
+
+rubble bit layout
+0 occurrence count
+4 red difference
+7 green difference
+10 blue difference
+13 opacity difference
+16
